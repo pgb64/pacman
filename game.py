@@ -30,6 +30,13 @@ import sys
 # Parts worth reading #
 #######################
 
+###################################################
+# Ahmed 
+###################################################
+import gamedata # Para la extraccion de datos de la partida
+import random
+random.seed(42) # Para reproducibilidad de los resultados
+###################################################
 
 class Agent:
     """
@@ -551,6 +558,11 @@ class Game:
     """
 
     def __init__(self, agents, display, rules, startingIndex=0, muteAgents=False, catchExceptions=False):
+        ###################################################
+        # Ahmed 
+        ###################################################
+        self.data_collector = None  # Se asignará desde fuera
+        ###################################################
         self.agentCrashed = False
         self.agents = agents
         self.display = display
@@ -655,6 +667,11 @@ class Game:
             agent = self.agents[agentIndex]
             move_time = 0
             skip_action = False
+            ###################################################
+            # Ahmed 
+            ###################################################
+            current_state = self.state.deepCopy() # Capturar el estado actual ANTES de la acción
+            ###################################################
             # Generate an observation of the state
             if 'observationFunction' in dir(agent):
                 self.mute(agentIndex)
@@ -745,6 +762,15 @@ class Game:
                     return
             else:
                 self.state = self.state.generateSuccessor(agentIndex, action)
+
+            ###################################################
+            # Ahmed 
+            ###################################################
+            # AQUÍ es donde capturamos los datos
+            if self.data_collector:
+                self.data_collector.capture_step(agentIndex, current_state, action, self.state)
+            ###################################################
+
 
             # Change the display
             self.display.update(self.state.data)
