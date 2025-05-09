@@ -767,7 +767,8 @@ class Game:
             # Ahmed 
             ###################################################
             # AQUÍ es donde capturamos los datos
-            if self.data_collector:
+            if self.data_collector and agentIndex == 0:
+                # Solo capturamos los datos del agente 0 (Pacman)
                 self.data_collector.capture_step(agentIndex, current_state, action, self.state)
             ###################################################
 
