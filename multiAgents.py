@@ -330,10 +330,6 @@ class NeuralAgent(Agent):
                 if ghost_distance <= 2:
                     score -= 200  # Gran penalización por estar demasiado cerca
         
-        # Factor 3: Número de cápsulas restantes
-        capsules = state.getCapsules()
-        score -= 10 * len(capsules)
-        
         # Combinar la puntuación de la red con la heurística
         neural_score = 0
         for i, action in enumerate(self.idx_to_action.values()):
