@@ -111,9 +111,84 @@ class MultiAgentSearchAgent(Agent):
         self.depth = int(depth)
 
 class MinimaxAgent(MultiAgentSearchAgent):
-    """
-    Your minimax agent (question 2)
-    """
+
+    def minimax(self, state : GameState, agentIndex : int, depth : int) -> float:
+        '''
+        Función que implementa el algoritmo min-max
+        Parameters:
+        -----------
+        state : GameState
+            El estado del juego.
+        agentIndex : int
+            Indice del agente (0 = Pacman)
+        depth : int
+            La profundidad en el árbol de búsqueda.
+        Returns:
+        --------
+        float
+            El valor del juego.
+        '''
+        # Profundidad máxima
+        Max_depth = 4 
+        
+        # Movimientos posibles
+        movements = state.getLegalActions(agentIndex)
+        if not movements or Max_depth == depth:
+            return self.evaluationFunction(state)
+
+        # Asiganar maximo (Pacman) y minimo (fantasmas)
+        n_agents = state.getNumAgents()
+        agent_type = ['max'] + ['min'] * (n_agents - 1)
+        agent = agent_type[agentIndex]
+
+        # Pacman --> se busca maximizar
+        if agent == 'max':
+            best = float('-inf') # Valor mínimo
+            best_move = None 
+
+            # Recorrer TODOS los movimientos posibles
+            for move in movements:
+                # Estado sucesor (lo que pasa si Pacman hace el movimiento)
+                suc = state.generateSuccessor(agentIndex, move)
+                # Llamar a la función minimax recursivamente (se modifica el agente y la profundidad)
+                value = self.minimax(suc, (agentIndex + 1) % n_agents, depth + (1 if agentIndex == n_agents - 1 else 0))
+                
+                # Si se encuentra un mejor valor, se actualiza
+                if value > best:
+                    best = value
+                    best_move = move
+            
+            # Raiz del árbol: ya sabemos que este movimiento tiene la máxima puntuación
+            # --> devolver el movimiento concreto (no la puntuación)
+            if depth == 0:
+                return best_move
+            # Si no es la raíz, devolver el valor máximo (hasta llegar a la raíz)
+            return best
+        
+        # Fantasmas --> se busca minimizar
+        else:
+            best = float('inf') # Valor máximo
+            # Recorrer TODOS los movimientos posibles
+            for move in movements:
+                # Estado sucesor (lo que pasa si el fantasma hace el movimiento)
+                suc = state.generateSuccessor(agentIndex, move)
+                value = self.minimax(suc, (agentIndex + 1) % n_agents, depth + (1 if agentIndex == n_agents - 1 else 0))
+                # Si se encuentra un mejor valor, se actualiza
+                # (en este caso, el mejor valor es el mínimo)
+                if value < best:
+                    best = value
+            # Devolver el valor mínimo (hasta llegar a la raíz)
+            # --> No interesa el movimiento de los fantasmas, solo su puntuación
+            return best
+
+
+        
+        
+
+        
+
+
+
 
     def getAction(self, gameState: GameState):
         """
@@ -139,7 +214,9 @@ class MinimaxAgent(MultiAgentSearchAgent):
         Returns whether or not the game state is a losing state
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        # Llamar a la función minimax para obtener la mejor acción
+        return self.minimax(gameState, 0, 0)
+        
 
 class AlphaBetaAgent(MultiAgentSearchAgent):
     """
