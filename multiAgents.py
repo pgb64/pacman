@@ -22,6 +22,8 @@ random.seed(42)  # For reproducibility
 from game import Agent
 from pacman import GameState
 
+global_depth = 6
+
 class ReflexAgent(Agent):
     """
     A reflex agent chooses an action at each choice point by examining
@@ -151,7 +153,7 @@ class MinimaxAgent(MultiAgentSearchAgent):
             El valor del juego.
         '''
         # Profundidad máxima
-        Max_depth = 4 
+        Max_depth = global_depth
         
         # Movimientos posibles
         movements = state.getLegalActions(agentIndex)
@@ -244,6 +246,72 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
     """
     Your minimax agent with alpha-beta pruning (question 3)
     """
+    def alphaBeta(self, state: GameState, agentIndex: int, depth: int, alpha: float, beta: float) -> float:
+
+        # Profundidad máxima
+        Max_depth = global_depth
+        
+        # Movimientos posibles
+        movements = state.getLegalActions(agentIndex)
+        if not movements or Max_depth == depth:
+            return self.evaluationFunction(state)
+
+        # Asiganar maximo (Pacman) y minimo (fantasmas)
+        n_agents = state.getNumAgents()
+        agent_type = ['max'] + ['min'] * (n_agents - 1)
+        agent = agent_type[agentIndex]
+
+        # Pacman --> se busca maximizar
+        if agent == 'max':
+            best = float('-inf') # Valor mínimo
+            best_move = None
+
+            # Recorrer TODOS los movimientos posibles
+            for move in movements:
+                # Estado sucesor (lo que pasa si Pacman hace el movimiento)
+                suc = state.generateSuccessor(agentIndex, move)
+                # Llamar a la función minimax recursivamente (se modifica el agente y la profundidad)
+                value = self.alphaBeta(suc, (agentIndex + 1) % n_agents, depth + (1 if agentIndex == n_agents - 1 else 0), alpha, beta)
+
+                # Si se encuentra un mejor valor, se actualiza
+                if value > best:
+                    best = value
+                    best_move = move
+
+                # Poda alfa-beta
+                alpha = max(alpha, best)
+                if beta < alpha:
+                    break
+
+            # Raiz del árbol: ya sabemos que este movimiento tiene la máxima puntuación
+            # --> devolver el movimiento concreto (no la puntuación)
+            if depth == 0:
+                return best_move
+            # Si no es la raíz, devolver el valor máximo (hasta llegar a la raíz)
+            return best
+
+        # Fantasmas --> se busca minimizar
+        else:
+            best = float('inf') # Valor máximo
+            # Recorrer TODOS los movimientos posibles
+            for move in movements:
+                # Estado sucesor (lo que pasa si el fantasma hace el movimiento)
+                suc = state.generateSuccessor(agentIndex, move)
+                value = self.alphaBeta(suc, (agentIndex + 1) % n_agents, depth + (1 if agentIndex == n_agents - 1 else 0), alpha, beta)
+                # Si se encuentra un mejor valor, se actualiza
+                # (en este caso, el mejor valor es el mínimo)
+                if value < best:
+                    best = value
+
+                # Poda alfa-beta
+                beta = min(beta, best)
+                if beta < alpha:
+                    break
+
+            # Devolver el valor mínimo (hasta llegar a la raíz)
+            # --> No interesa el movimiento de los fantasmas, solo su puntuación
+            return best
+
 
     def alphabeta(self, state, depth, agentIndex, alpha, beta):
         if state.isWin() or state.isLose() or depth == self.depth * state.getNumAgents():
@@ -288,6 +356,7 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
         """
         "*** YOUR CODE HERE ***"
         return self.alphabeta(gameState, 0, 0, float('-inf'), float('inf'))
+
 
 class ExpectimaxAgent(MultiAgentSearchAgent):
     """
