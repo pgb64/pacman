@@ -809,9 +809,15 @@ if __name__ == '__main__':
 
     > python pacman.py --help
     """
+    # Prueba rendimiento minimax vs aphabeta
+    import time
+    
+    t1 = time.time()
     args = readCommand(sys.argv[1:])  # Get game components based on input
     runGames(**args)
-
+    tiempo = time.time() - t1
+    print(tiempo)
+    
     # import cProfile
     # cProfile.run("runGames( **args )")
     pass

@@ -22,6 +22,8 @@ random.seed(42)  # For reproducibility
 from game import Agent
 from pacman import GameState
 
+global_depth = 3
+
 class ReflexAgent(Agent):
     """
     A reflex agent chooses an action at each choice point by examining
@@ -78,7 +80,29 @@ class ReflexAgent(Agent):
         newScaredTimes = [ghostState.scaredTimer for ghostState in newGhostStates]
 
         "*** YOUR CODE HERE ***"
-        return successorGameState.getScore()
+
+        # Si es un estado de victoria o derrota, devuélvelo directamente
+        if successorGameState.isWin():
+            return float('inf')
+        if successorGameState.isLose():
+            return float('-inf')
+
+        # Penalizar si estamos cerca de un fantasma que no está asustado
+        ghostDistances = [manhattanDistance(newPos, ghost.getPosition()) for ghost in newGhostStates]
+        dangerGhosts = [dist for i, dist in enumerate(ghostDistances) if newScaredTimes[i] == 0]
+        ghostPenalty = -2 / min(dangerGhosts) if dangerGhosts else 0  # más penalización si está muy cerca
+
+        # Premiar estar cerca de la comida
+        foodList = newFood.asList()
+        if len(foodList) == 0:
+            foodReward = 100
+        else:
+            foodDistances = [manhattanDistance(newPos, food) for food in foodList]
+            foodReward = 1 / min(foodDistances)  # más recompensa si está más cerca
+
+        # Bonus por comer comida
+        foodEaten = currentGameState.getNumFood() - successorGameState.getNumFood()
+        return successorGameState.getScore() + foodReward + ghostPenalty + foodEaten * 10
 
 def scoreEvaluationFunction(currentGameState: GameState):
     """
@@ -105,7 +129,7 @@ class MultiAgentSearchAgent(Agent):
     is another abstract class.
     """
 
-    def __init__(self, evalFn = 'scoreEvaluationFunction', depth = '2'):
+    def __init__(self, evalFn = 'betterEvaluationFunction', depth = '2'):
         self.index = 0 # Pacman is always agent index 0
         self.evaluationFunction = util.lookup(evalFn, globals())
         self.depth = int(depth)
@@ -129,7 +153,7 @@ class MinimaxAgent(MultiAgentSearchAgent):
             El valor del juego.
         '''
         # Profundidad máxima
-        Max_depth = 4 
+        Max_depth = global_depth
         
         # Movimientos posibles
         movements = state.getLegalActions(agentIndex)
@@ -181,15 +205,6 @@ class MinimaxAgent(MultiAgentSearchAgent):
             # --> No interesa el movimiento de los fantasmas, solo su puntuación
             return best
 
-
-        
-        
-
-        
-
-
-
-
     def getAction(self, gameState: GameState):
         """
         Returns the minimax action from the current gameState using self.depth
@@ -222,18 +237,116 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
     """
     Your minimax agent with alpha-beta pruning (question 3)
     """
+    def alphabeta(self, state: GameState, agentIndex: int, depth: int, alpha: float, beta: float) -> float:
+
+        # Profundidad máxima
+        Max_depth = global_depth
+        
+        # Movimientos posibles
+        movements = state.getLegalActions(agentIndex)
+        if not movements or Max_depth == depth:
+            return self.evaluationFunction(state)
+
+        # Asiganar maximo (Pacman) y minimo (fantasmas)
+        n_agents = state.getNumAgents()
+        agent_type = ['max'] + ['min'] * (n_agents - 1)
+        agent = agent_type[agentIndex]
+
+        # Pacman --> se busca maximizar
+        if agent == 'max':
+            best = float('-inf') # Valor mínimo
+            best_move = None
+
+            # Recorrer TODOS los movimientos posibles
+            for move in movements:
+                # Estado sucesor (lo que pasa si Pacman hace el movimiento)
+                suc = state.generateSuccessor(agentIndex, move)
+                # Llamar a la función minimax recursivamente (se modifica el agente y la profundidad)
+                value = self.alphabeta(suc, (agentIndex + 1) % n_agents, depth + (1 if agentIndex == n_agents - 1 else 0), alpha, beta)
+
+                # Si se encuentra un mejor valor, se actualiza
+                if value > best:
+                    best = value
+                    best_move = move
+
+                # Poda alfa-beta
+                alpha = max(alpha, best)
+                if beta < alpha:
+                    break
+
+            # Raiz del árbol: ya sabemos que este movimiento tiene la máxima puntuación
+            # --> devolver el movimiento concreto (no la puntuación)
+            if depth == 0:
+                return best_move
+            # Si no es la raíz, devolver el valor máximo (hasta llegar a la raíz)
+            return best
+
+        # Fantasmas --> se busca minimizar
+        else:
+            best = float('inf') # Valor máximo
+            # Recorrer TODOS los movimientos posibles
+            for move in movements:
+                # Estado sucesor (lo que pasa si el fantasma hace el movimiento)
+                suc = state.generateSuccessor(agentIndex, move)
+                value = self.alphabeta(suc, (agentIndex + 1) % n_agents, depth + (1 if agentIndex == n_agents - 1 else 0), alpha, beta)
+                # Si se encuentra un mejor valor, se actualiza
+                # (en este caso, el mejor valor es el mínimo)
+                if value < best:
+                    best = value
+
+                # Poda alfa-beta
+                beta = min(beta, best)
+                if beta < alpha:
+                    break
+
+            # Devolver el valor mínimo (hasta llegar a la raíz)
+            # --> No interesa el movimiento de los fantasmas, solo su puntuación
+            return best
+
 
     def getAction(self, gameState: GameState):
         """
         Returns the minimax action using self.depth and self.evaluationFunction
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        return self.alphabeta(gameState, 0, 0, float('-inf'), float('inf'))
+
 
 class ExpectimaxAgent(MultiAgentSearchAgent):
     """
       Your expectimax agent (question 4)
     """
+
+    def expectimax(self, state, depth, agentIndex):
+        if state.isWin() or state.isLose() or depth == self.depth * state.getNumAgents():
+            return self.evaluationFunction(state)
+
+        numAgents = state.getNumAgents()
+        nextAgent = (agentIndex + 1) % numAgents
+        nextDepth = depth + 1
+
+        legalActions = state.getLegalActions(agentIndex)
+        if not legalActions:
+            return self.evaluationFunction(state)
+
+        if agentIndex == 0:  # Pacman (MAX)
+            bestScore = float('-inf')
+            bestAction = None
+            for action in legalActions:
+                successor = state.generateSuccessor(agentIndex, action)
+                score = self.expectimax(successor, nextDepth, nextAgent)
+                if depth == 0:
+                    if bestAction is None or score > bestScore:
+                        bestAction = action
+                bestScore = max(bestScore, score)
+            return bestAction if depth == 0 else bestScore
+        else:  # Fantasmas (valores esperados)
+            total = 0
+            for action in legalActions:
+                successor = state.generateSuccessor(agentIndex, action)
+                score = self.expectimax(successor, nextDepth, nextAgent)
+                total += score
+            return total / len(legalActions)
 
     def getAction(self, gameState: GameState):
         """
@@ -243,17 +356,79 @@ class ExpectimaxAgent(MultiAgentSearchAgent):
         legal moves.
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        return self.expectimax(gameState, 0, 0)
 
 def betterEvaluationFunction(currentGameState: GameState):
     """
     Your extreme ghost-hunting, pellet-nabbing, food-gobbling, unstoppable
     evaluation function (question 5).
 
-    DESCRIPTION: <write something here so we know what you did>
+    DESCRIPTION: Modificada para que Pacman aproveche a comer cuando los fantasmas están lejos,
+    y para penalizar quedarse quieto (STOP).
     """
-    "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+
+    pacmanPos = currentGameState.getPacmanPosition()
+    food = currentGameState.getFood()
+    foodList = food.asList()
+    ghostStates = currentGameState.getGhostStates()
+    scaredTimes = [ghost.scaredTimer for ghost in ghostStates]
+    capsules = currentGameState.getCapsules()
+
+    # Puntuacion actual
+    score = currentGameState.getScore()
+
+    # Premia --> comer comida
+    score -= 4 * len(foodList)
+
+    # Penaliza --> cápsulas disponibles
+    score -= 10 * len(capsules)
+
+    # Distancia mínima a la comida
+    if foodList:
+        minFoodDist = min(manhattanDistance(pacmanPos, f) for f in foodList)
+    else:
+        minFoodDist = 0
+
+    # Distancias a fantasmas
+    ghostDists = [manhattanDistance(pacmanPos, ghost.getPosition()) for ghost in ghostStates]
+
+    # Umbral para fantasmas lejanos
+    DIST_GHOST_FAR = 5
+
+    # Comprobar si todos los fantasmas están lejos (o están asustados)
+    allGhostsFar = all((dist > DIST_GHOST_FAR or scaredTimes[i] > 0) for i, dist in enumerate(ghostDists))
+
+    # Si los fantasmas están lejos, premiar mucho más la comida
+    if allGhostsFar and minFoodDist > 0:
+        score += 10 / (minFoodDist + 1)  # recompensa más fuerte
+    else:
+        # Premia --> proximación
+        if minFoodDist > 0:
+            score += 5 / (minFoodDist + 1)
+
+    # Premia --> acercarse a cápsulas
+    if capsules:
+        minCapsuleDist = min(manhattanDistance(pacmanPos, c) for c in capsules)
+        score += 3 / (minCapsuleDist + 1)
+
+    # Fantasmas
+    for i, ghost in enumerate(ghostStates):
+        ghostDist = ghostDists[i]
+        if scaredTimes[i] > 0:
+            # Si asustado --> acercarse
+            score += 2 / (ghostDist + 1)
+        else:
+            # si no --> alejarse
+            if ghostDist < 2:
+                score -= 10 / (ghostDist + 1)
+
+    # Penalizar quedarse quieto
+    legalActions = currentGameState.getLegalActions()
+    if Directions.STOP in legalActions:
+        score -= 5  
+
+    return score
+
 
 # Abbreviation
 better = betterEvaluationFunction
@@ -304,7 +479,7 @@ class NeuralAgent(Agent):
             self.input_size = checkpoint['input_size']
             
             # Crear y cargar el modelo
-            self.model = PacmanNet(self.input_size, 128, 5).to(self.device)
+            self.model = PacmanNet(self.input_size, output_size=5).to(self.device)
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.model.eval()  # Modo evaluación
             

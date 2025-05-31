@@ -50,34 +50,92 @@ class PacmanDataset(Dataset):
         return map_tensor, action_tensor.squeeze()
 
 class PacmanNet(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(PacmanNet, self).__init__()
-        
-        # Calcular el tamaño total de entrada (aplanar la matriz)
-        self.input_features = input_size[0] * input_size[1]
-        
-        # Capas fully connected (feedforward)
-        self.fc1 = nn.Linear(self.input_features, hidden_size * 2)
-        self.fc2 = nn.Linear(hidden_size * 2, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, output_size)
-        
-        # Activaciones
+    def __init__(self, input_size, output_size=5):
+        """
+        Red neuronal convolucional para clasificar la mejor acción de Pacman
+        a partir de la matriz del estado del juego.
+
+        Args:
+            input_size (tuple): (height, width) tamaño del mapa de entrada.
+            output_size (int): número de clases (acciones posibles).
+        """
+        super().__init__()
+
+        c, h, w = 1, input_size[0], input_size[1]  # Canales, alto, ancho
+
+        # Activación ReLU instanciada para usar en todo el forward
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.3)
-    
+
+        # Primera capa convolucional:
+        self.conv1 = nn.Conv2d(c, 32, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)  # Normalización por lotes
+
+        # Segunda capa convolucional:
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)  # Max pooling
+        self.dropout1 = nn.Dropout(0.3)
+
+        # Tercera capa convolucional:
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.dropout2 = nn.Dropout(0.3)
+
+        # Calculamos tamaño para fully connected después del pooling
+        fc_input_size = (h // 4) * (w // 4) * 128
+
+        # Fully connected layers
+        self.fc1 = nn.Linear(fc_input_size, 1024)
+        self.dropout3 = nn.Dropout(0.4)
+        self.fc2 = nn.Linear(1024, 256)
+        self.dropout4 = nn.Dropout(0.4)
+        self.fc3 = nn.Linear(256, output_size)  # Salida: logits para cada acción
+
     def forward(self, x):
-        # Input shape: (batch_size, height, width)
-        #print(f"Forma de entrada: {x.shape}")
-        # Aplanar la entrada
-        x = x.view(x.size(0), -1)  # Shape: (batch_size, height*width)
-        
-        # Capas fully connected
-        x = self.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = self.relu(self.fc2(x))
-        x = self.dropout(x)
+        """
+        Propagación hacia adelante.
+
+        Args:
+            x (Tensor): tensor con forma (batch_size, height, width)
+
+        Returns:
+            Tensor: logits sin activar (para usar con CrossEntropyLoss)
+        """
+        x = x.unsqueeze(1)  
+
+        # Bloque convolucional 1
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        # Bloque convolucional 2 + pooling + dropout
+        x = self.conv2(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        x = self.dropout1(x)
+
+        # Bloque convolucional 3 + pooling + dropout
+        x = self.conv3(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        x = self.dropout2(x)
+
+        # Aplanar para fully connected
+        x = x.view(x.size(0), -1)
+
+        # Fully connected 1 + dropout
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.dropout3(x)
+
+        # Fully connected 2 + dropout
+        x = self.fc2(x)
+        x = self.relu(x)
+        x = self.dropout4(x)
+
+        # Capa de salida 
         x = self.fc3(x)
-        
+
         return x
 
 def load_and_merge_data(data_dir="pacman_data"):
@@ -240,14 +298,15 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     
     # Crear modelo
-    model = PacmanNet(input_size, HIDDEN_SIZE, NUM_ACTIONS).to(device)
+    model = PacmanNet(input_size, output_size=NUM_ACTIONS).to(device)
+
     print(f"Modelo creado: {model}")
     
     # Entrenar modelo
     trained_model = train_model(model, train_loader, test_loader, device)
     
     # Guardar modelo
-    save_model(trained_model, input_size)
+    save_model(trained_model, input_size, model_path="models/final_model.pth")
     print(f"Tiempo total de ejecución: {time.time() - start_time:.2f} segundos")
 if __name__ == "__main__":
     main()
