@@ -80,7 +80,29 @@ class ReflexAgent(Agent):
         newScaredTimes = [ghostState.scaredTimer for ghostState in newGhostStates]
 
         "*** YOUR CODE HERE ***"
-        return successorGameState.getScore()
+
+        # Si es un estado de victoria o derrota, devuélvelo directamente
+        if successorGameState.isWin():
+            return float('inf')
+        if successorGameState.isLose():
+            return float('-inf')
+
+        # Penalizar si estamos cerca de un fantasma que no está asustado
+        ghostDistances = [manhattanDistance(newPos, ghost.getPosition()) for ghost in newGhostStates]
+        dangerGhosts = [dist for i, dist in enumerate(ghostDistances) if newScaredTimes[i] == 0]
+        ghostPenalty = -2 / min(dangerGhosts) if dangerGhosts else 0  # más penalización si está muy cerca
+
+        # Premiar estar cerca de la comida
+        foodList = newFood.asList()
+        if len(foodList) == 0:
+            foodReward = 100
+        else:
+            foodDistances = [manhattanDistance(newPos, food) for food in foodList]
+            foodReward = 1 / min(foodDistances)  # más recompensa si está más cerca
+
+        # Bonus por comer comida
+        foodEaten = currentGameState.getNumFood() - successorGameState.getNumFood()
+        return successorGameState.getScore() + foodReward + ghostPenalty + foodEaten * 10
 
 def scoreEvaluationFunction(currentGameState: GameState):
     """
@@ -291,17 +313,86 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
             return best
 
 
+    def alphabeta(self, state, depth, agentIndex, alpha, beta):
+        if state.isWin() or state.isLose() or depth == self.depth * state.getNumAgents():
+            return self.evaluationFunction(state)
+
+        numAgents = state.getNumAgents()
+        nextAgent = (agentIndex + 1) % numAgents
+        nextDepth = depth + 1
+
+        legalActions = state.getLegalActions(agentIndex)
+        if not legalActions:
+            return self.evaluationFunction(state)
+
+        if agentIndex == 0:  # Pacman (MAX)
+            bestScore = float('-inf')
+            bestAction = None
+            for action in legalActions:
+                successor = state.generateSuccessor(agentIndex, action)
+                score = self.alphabeta(successor, nextDepth, nextAgent, alpha, beta)
+                if depth == 0:
+                    if bestAction is None or score > bestScore:
+                        bestAction = action
+                bestScore = max(bestScore, score)
+                alpha = max(alpha, bestScore)
+                if bestScore > beta:
+                    break  # poda
+            return bestAction if depth == 0 else bestScore
+        else:  # Fantasmas (MIN)
+            bestScore = float('inf')
+            for action in legalActions:
+                successor = state.generateSuccessor(agentIndex, action)
+                score = self.alphabeta(successor, nextDepth, nextAgent, alpha, beta)
+                bestScore = min(bestScore, score)
+                beta = min(beta, bestScore)
+                if bestScore < alpha:
+                    break  # poda
+            return bestScore
+
     def getAction(self, gameState: GameState):
         """
         Returns the minimax action using self.depth and self.evaluationFunction
         """
         "*** YOUR CODE HERE ***"
-        return self.alphaBeta(gameState, 0, 0, float('-inf'), float('inf'))
+        return self.alphabeta(gameState, 0, 0, float('-inf'), float('inf'))
+
 
 class ExpectimaxAgent(MultiAgentSearchAgent):
     """
       Your expectimax agent (question 4)
     """
+
+    def expectimax(self, state, depth, agentIndex):
+        if state.isWin() or state.isLose() or depth == self.depth * state.getNumAgents():
+            return self.evaluationFunction(state)
+
+        numAgents = state.getNumAgents()
+        nextAgent = (agentIndex + 1) % numAgents
+        nextDepth = depth + 1
+
+        legalActions = state.getLegalActions(agentIndex)
+        if not legalActions:
+            return self.evaluationFunction(state)
+
+        if agentIndex == 0:  # Pacman (MAX)
+            bestScore = float('-inf')
+            bestAction = None
+            for action in legalActions:
+                successor = state.generateSuccessor(agentIndex, action)
+                score = self.expectimax(successor, nextDepth, nextAgent)
+                if depth == 0:
+                    if bestAction is None or score > bestScore:
+                        bestAction = action
+                bestScore = max(bestScore, score)
+            return bestAction if depth == 0 else bestScore
+        else:  # Fantasmas (valores esperados)
+            total = 0
+            for action in legalActions:
+                successor = state.generateSuccessor(agentIndex, action)
+                score = self.expectimax(successor, nextDepth, nextAgent)
+                total += score
+            return total / len(legalActions)
 
     def getAction(self, gameState: GameState):
         """
@@ -311,7 +402,7 @@ class ExpectimaxAgent(MultiAgentSearchAgent):
         legal moves.
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        return self.expectimax(gameState, 0, 0)
 
 def betterEvaluationFunction(currentGameState: GameState):
     """
@@ -321,7 +412,45 @@ def betterEvaluationFunction(currentGameState: GameState):
     DESCRIPTION: <write something here so we know what you did>
     """
     "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+    # Datos básicos
+    pacmanPos = currentGameState.getPacmanPosition()
+    food = currentGameState.getFood()
+    foodList = food.asList()
+    ghostStates = currentGameState.getGhostStates()
+    scaredTimes = [ghost.scaredTimer for ghost in ghostStates]
+    capsules = currentGameState.getCapsules()
+
+    # Puntaje base del juego actual
+    score = currentGameState.getScore()
+
+    # Penalizar comida restante
+    score -= 4 * len(foodList)
+
+    # Penalizar cápsulas restantes
+    score -= 10 * len(capsules)
+
+    # Comida: premiar estar cerca
+    if foodList:
+        minFoodDist = min(manhattanDistance(pacmanPos, f) for f in foodList)
+        score += 5 / (minFoodDist + 1)
+
+    # Cápsulas: premiar estar cerca
+    if capsules:
+        minCapsuleDist = min(manhattanDistance(pacmanPos, c) for c in capsules)
+        score += 3 / (minCapsuleDist + 1)
+
+    # Fantasmas
+    for i, ghost in enumerate(ghostStates):
+        ghostDist = manhattanDistance(pacmanPos, ghost.getPosition())
+        if scaredTimes[i] > 0:
+            # Si está asustado, queremos acercarnos
+            score += 2 / (ghostDist + 1)
+        else:
+            # Si no, penalizar cercanía
+            if ghostDist < 2:
+                score -= 10 / (ghostDist + 1)
+
+    return score
 
 # Abbreviation
 better = betterEvaluationFunction
